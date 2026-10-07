@@ -1,0 +1,65 @@
+version: 2
+
+models:
+  - name: fct_observations_hourly
+    description: 地点属性と地方名を付与した時別観測ファクト(incremental)。
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [station_id, observed_at]
+    columns:
+      - name: station_id
+        tests: [not_null]
+      - name: observed_at
+        tests: [not_null]
+      - name: pref_name
+        tests: [not_null]
+
+  - name: daily_station_weather
+    description: 地点 × 日の集計(最高/最低/平均気温、日降水量、最大風速、日照時間)。
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [station_id, observation_date]
+    columns:
+      - name: observation_count
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 24
+      - name: temp_max_c
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -45
+                max_value: 45
+
+  - name: daily_pref_weather
+    description: 府県(気象庁の地方区分) × 日の集計。
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [pref_code, observation_date]
+    columns:
+      - name: hottest_station_name
+        tests: [not_null]
+
+  - name: rankings_latest_day
+    description: 直近日の全国ランキング上位10(最高気温・最低気温・降水量・最大風速)。
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ranking_type, station_id]
+    columns:
+      - name: ranking_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: [hottest, coldest, wettest, windiest]
+      - name: ranking
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 10

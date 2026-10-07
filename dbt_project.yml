@@ -1,0 +1,33 @@
+name: amedas_elt
+version: "1.0.0"
+config-version: 2
+
+profile: amedas_elt
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  amedas_elt:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts
+
+seeds:
+  amedas_elt:
+    +schema: seeds
+    jma_pref_codes:
+      +column_types:
+        pref_code: varchar
+        pref_name: varchar
+        region: varchar

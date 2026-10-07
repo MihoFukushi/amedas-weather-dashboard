@@ -1,0 +1,77 @@
+name: daily-elt
+
+on:
+  schedule:
+    # 毎日 03:00 UTC = 12:00 JST
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily-elt
+  cancel-in-progress: false
+
+jobs:
+  elt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      # 直近2日分を取得。保存済みの時刻はスキップされるので毎日差分だけ増える
+      - name: Extract (JMA AMeDAS)
+        run: python scripts/extract_amedas.py --days 2
+
+      - name: dbt deps / build
+        run: |
+          dbt deps
+          dbt build
+
+      # Pages に載せるのは index.html / manifest.json / catalog.json の3ファイルだけで足りる
+      - name: dbt docs generate
+        run: |
+          dbt docs generate
+          mkdir -p docs_site
+          cp target/index.html target/manifest.json target/catalog.json docs_site/
+
+      # 生データ(JSONL.gz)を git に積んでいくことで、無料で履歴を蓄積する
+      - name: Commit raw data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/raw
+          git diff --cached --quiet || git commit -m "data: amedas $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Upload DuckDB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: amedas-duckdb
+          path: data/amedas.duckdb
+          retention-days: 7
+
+      - name: Upload dbt docs for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs_site
+
+  # dbt docs を GitHub Pages に公開する(リポジトリ設定で Pages の Source を "GitHub Actions" にする)
+  deploy-docs:
+    needs: elt
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

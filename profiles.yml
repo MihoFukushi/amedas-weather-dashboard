@@ -1,0 +1,9 @@
+# dbt はカレントディレクトリの profiles.yml を優先して読むので、
+# プロジェクトルートで `dbt run` すればこのファイルが使われる。
+amedas_elt:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: data/amedas.duckdb
+      threads: 4

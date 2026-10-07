@@ -1,0 +1,19 @@
+# dbt
+target/
+dbt_packages/
+logs/
+
+# DuckDB (dbt build で再生成できるのでコミットしない)
+data/*.duckdb
+data/*.duckdb.wal
+
+# 一時ファイル
+data/raw/**/*.tmp
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# dbt docs 出力(CI 用)
+docs_site/

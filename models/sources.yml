@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: amedas
+    description: >
+      気象庁 AMeDAS のオープンデータ。scripts/extract_amedas.py が
+      data/raw/amedas/ 配下に JSONL(gzip) として保存したものを、
+      dbt-duckdb の external_location で DB にロードせず直接読む。
+    tables:
+      - name: stations
+        description: 観測地点マスタ(amedastable.json を平坦化したもの)
+        meta:
+          external_location: "read_json_auto('data/raw/amedas/stations.jsonl.gz', format='newline_delimited')"
+        columns:
+          - name: station_id
+            tests: [not_null, unique]
+      - name: observations
+        description: 全地点の時別観測値。1ファイル = 1時刻 × 全地点。
+        meta:
+          external_location: "read_json_auto('data/raw/amedas/observations/*/*.jsonl.gz', format='newline_delimited', union_by_name=true)"
+        columns:
+          - name: observed_at
+            tests: [not_null]
+          - name: station_id
+            tests: [not_null]

@@ -1,0 +1,10 @@
+version: 2
+
+seeds:
+  - name: jma_pref_codes
+    description: 気象庁の府県番号(地点番号の先頭2桁)と地方名の対応表。
+    columns:
+      - name: pref_code
+        tests: [not_null, unique]
+      - name: pref_name
+        tests: [not_null]
