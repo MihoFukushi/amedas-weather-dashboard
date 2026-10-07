@@ -1,4 +1,4 @@
-"""dbt が作った DuckDB の marts を眺める簡易ダッシュボード。
+"""AMeDAS 観測値の集計結果(DuckDB の marts スキーマ)を表示するダッシュボード。
 
     streamlit run app/streamlit_app.py
 """
@@ -12,8 +12,8 @@ import streamlit as st
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "amedas.duckdb"
 
-st.set_page_config(page_title="AMeDAS ELT", layout="wide")
-st.title("AMeDAS オープンデータ ELT ダッシュボード")
+st.set_page_config(page_title="AMeDAS 気象ダッシュボード", layout="wide")
+st.title("AMeDAS 気象ダッシュボード")
 
 if not DB_PATH.exists():
     st.error("data/amedas.duckdb がありません。先に `dbt build` を実行してください。")

@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 BASE_URL = "https://www.jma.go.jp/bosai/amedas"
-USER_AGENT = "amedas-elt (personal learning project)"
+USER_AGENT = "amedas-weather-dashboard (https://github.com/)"
 
 # 取り込む観測要素。map JSON の値は [値, 品質フラグ] の配列で入っている。
 ELEMENTS = {

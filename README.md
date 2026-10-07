@@ -1,96 +1,109 @@
-# amedas-elt
+# AMeDAS 気象ダッシュボード
 
-気象庁 AMeDAS のオープンデータを題材にした、**dbt を学ぶための ELT パイプライン**。
-全部無料(dbt Core + DuckDB + GitHub Actions)で動く。
+気象庁 AMeDAS の時別観測値を毎日自動で取り込み、全国約 1,300 地点の気温・降水量・風速を
+地点別・地方別に集計して可視化するダッシュボードです。
+
+- **全国ランキング**: 直近日の最高気温・最低気温・降水量・最大風速の上位 10 地点
+- **地方別の気温推移**: 任意の地方を選んで日最高気温の推移を比較
+- **地点マップ**: 直近日の最高気温を全国地図上に色分け表示
+
+データ取得から集計、品質チェック、公開までを GitHub Actions で毎日自動実行します。
+外部サービスの契約や API キーは不要です。
+
+## アーキテクチャ
 
 ```
-気象庁 AMeDAS API ──▶ scripts/extract_amedas.py ──▶ data/raw/amedas/*.jsonl.gz
-                                                          │
-                                   dbt-duckdb が外部ファイルとして直接読む
-                                                          ▼
-                     staging(view) ──▶ marts(table / incremental) ──▶ tests / docs
-                                                          │
-                                                          ▼
-                                            app/streamlit_app.py で可視化
+気象庁 AMeDAS(JSON)
+      │  scripts/extract_amedas.py(毎日の差分取得)
+      ▼
+data/raw/amedas/*.jsonl.gz(生データ。git で履歴を保持)
+      │  dbt + DuckDB(型変換 → 地点マスタ結合 → 日次集計 → 品質テスト)
+      ▼
+data/amedas.duckdb(marts スキーマ)
+      │
+      ▼
+app/streamlit_app.py(ダッシュボード)
 ```
+
+| 層 | 役割 |
+|---|---|
+| 取得 | 気象庁サイトの JSON を時刻ごとに保存。取得済みの時刻はスキップ |
+| 変換 | dbt が DuckDB 上で staging(整形)→ marts(集計)を構築 |
+| 検証 | 主キーの一意性、値域、参照整合性など 34 件の自動テスト |
+| 可視化 | Streamlit が marts を読み取って表示 |
 
 ## データソース
 
-| 内容 | URL | 備考 |
-|---|---|---|
-| 観測地点マスタ | `https://www.jma.go.jp/bosai/amedas/const/amedastable.json` | 約1,300地点 |
-| 時別観測値(全地点) | `https://www.jma.go.jp/bosai/amedas/data/map/YYYYMMDDHH0000.json` | 過去10日ほど取得可能 |
+| 内容 | URL |
+|---|---|
+| 観測地点マスタ | `https://www.jma.go.jp/bosai/amedas/const/amedastable.json` |
+| 時別観測値(全地点) | `https://www.jma.go.jp/bosai/amedas/data/map/YYYYMMDDHH0000.json` |
 
-API キー不要。気象庁の公式 API ではなくサイト用の JSON なので、個人利用の範囲で間隔を空けて取得する。
+気象庁サイトの表示用 JSON を利用しています。取得間隔を空け、個人利用の範囲で使用してください。
 
 ## セットアップ
 
 ```powershell
-cd C:\Users\fukus\dev\amedas-elt
 python -m venv .venv
-& .\.venv\Scripts\Activate.ps1     # ターミナルを開くたびに実行する
+& .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 dbt deps
 ```
 
-プロジェクトは Google Drive の外(ローカル)に置く。仮想環境(.venv)は数万ファイルになるので、
-Drive 同期フォルダの中に作ると同期が重くなりロックエラーの原因になる。
-
 ## 実行
 
 ```powershell
-# 1. 抽出(直近3日分。保存済みの時刻はスキップするので何度実行してもOK)
+# 1. データ取得(直近 3 日分)
 python scripts/extract_amedas.py --days 3
 
-# 2. 変換 + テスト(seed → run → test を依存順に実行)
+# 2. 集計とテスト
 dbt build
 
-# 3. 可視化
+# 3. ダッシュボード起動
 streamlit run app/streamlit_app.py
-
-# ドキュメント(lineage グラフが見られる)
-dbt docs generate
-dbt docs serve
 ```
 
-`profiles.yml` をプロジェクト直下に置いているので、`~/.dbt/profiles.yml` は不要。
+データリネージと各テーブルの定義は `dbt docs generate; dbt docs serve` で参照できます。
 
-## プロジェクト構成と dbt の学びどころ
+## 提供テーブル(marts スキーマ)
 
-| パス | 何をしているか | dbt の機能 |
+| テーブル | 粒度 | 主な列 |
 |---|---|---|
-| `models/sources.yml` | gzip JSONL を DB にロードせず直接ソースとして定義 | source, dbt-duckdb の `external_location` |
-| `models/staging/stg_amedas__*.sql` | 型変換・改名・品質フラグによる null 化 | staging 層、Jinja の for ループ |
-| `models/marts/fct_observations_hourly.sql` | 地点属性を結合した時別ファクト。2回目以降は直近1日だけ再計算 | incremental, `is_incremental()`, `delete+insert` |
-| `models/marts/daily_*.sql` | 地点 × 日、地方 × 日の集計 | ref による依存関係(lineage) |
-| `models/marts/rankings_latest_day.sql` | 4種類のランキングを Jinja で生成して union | Jinja マクロ的な書き方 |
-| `seeds/jma_pref_codes.csv` | 府県番号 → 地方名のマスタ | seed |
-| `models/**/schema.yml` | not_null / unique / relationships / accepted_range | generic test, dbt_utils |
-| `tests/assert_no_future_observations.sql` | 未来時刻が混入していないか | singular test |
-| `macros/generate_schema_name.sql` | スキーマ名を `main_marts` ではなく `marts` にする | マクロのオーバーライド |
+| `fct_observations_hourly` | 地点 × 時刻 | 気温、湿度、降水量、風速、気圧、日照、積雪 |
+| `daily_station_weather` | 地点 × 日 | 最高/最低/平均気温、日降水量、最大風速、日照時間、`is_complete_day` |
+| `daily_pref_weather` | 地方 × 日 | 地方内の最高/最低気温、平均降水量、最高気温地点名 |
+| `rankings_latest_day` | ランキング種別 × 順位 | 直近日の全国上位 10 地点 |
 
-## marts の中身
+品質フラグが正常・準正常以外の観測値は null として扱います。
+`is_complete_day` が false の日は 24 時間分の観測がそろっていない途中集計です。
 
-- `marts.fct_observations_hourly`: 地点 × 時刻。気温・湿度・降水量・風速・気圧・日照・積雪
-- `marts.daily_station_weather`: 地点 × 日。最高/最低/平均気温、日降水量、最大風速、日照時間
-- `marts.daily_pref_weather`: 地方 × 日。地方内の最高気温地点名つき
-- `marts.rankings_latest_day`: 直近日の全国ランキング(最高気温・最低気温・降水量・最大風速)上位10
+## 自動実行(GitHub Actions)
 
-## 毎日自動で動かす(GitHub Actions)
+`.github/workflows/daily_elt.yml` が毎日 12:00 JST に次を実行します。
 
-`.github/workflows/daily_elt.yml` が毎日 12:00 JST に
+1. 直近 2 日分の観測値を取得し、生データの差分を git にコミット
+2. `dbt build` で集計と品質テストを実行
+3. DuckDB ファイルを Artifact として 7 日間保存
+4. データカタログ(dbt docs)を GitHub Pages に公開
 
-1. 直近2日分を抽出して `data/raw` の差分を git にコミット(無料のデータ蓄積先として git を使う)
-2. `dbt build` でテストまで実行
-3. DuckDB ファイルを Artifact として保存(7日)
-4. `dbt docs` を GitHub Pages に公開
+利用にはリポジトリ設定で Pages の Source を **GitHub Actions** に、Workflow permissions を
+**Read and write** にしてください。Pages を使わない場合は `deploy-docs` ジョブを削除します。
 
-Pages を使う場合はリポジトリの Settings → Pages → Source を **GitHub Actions** にする。
-不要なら `deploy-docs` ジョブと Pages 関連の step を削除すればよい。
+## ディレクトリ構成
 
-## 次のステップ案
+```
+models/staging/   生データの型変換・改名・品質フラグ処理(view)
+models/marts/     集計テーブル(table / incremental)
+seeds/            府県コードと地方名の対応表
+tests/            個別の整合性テスト
+macros/           スキーマ命名の調整
+scripts/          データ取得、DuckDB への問い合わせ補助
+app/              Streamlit ダッシュボード
+docs/             設計メモ
+```
 
-- `dbt snapshot` で地点マスタの変更履歴(SCD Type 2)を取る
-- `exposures` を定義して Streamlit アプリを lineage に載せる
-- 気象庁の予報 JSON(`bosai/forecast`)を追加ソースにして「予報 vs 実況」のモデルを作る
-- DuckDB → MotherDuck(無料枠)に切り替えてクラウド DWH を体験する
+## 今後の拡張候補
+
+- 地点マスタの変更履歴の保持(dbt snapshot)
+- 気象庁の予報 JSON を追加し、予報と実況の比較テーブルを作成
+- DuckDB から MotherDuck への移行によるクラウド共有
