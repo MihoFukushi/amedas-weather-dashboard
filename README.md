@@ -3,9 +3,11 @@
 気象庁 AMeDAS の時別観測値を毎日自動で取り込み、全国約 1,300 地点の気温・降水量・風速を
 地点別・地方別に集計して可視化するダッシュボードです。
 
-- **全国ランキング**: 直近日の最高気温・最低気温・降水量・最大風速の上位 10 地点
-- **地方別の気温推移**: 任意の地方を選んで日最高気温の推移を比較
-- **地点マップ**: 直近日の最高気温を全国地図上に色分け表示
+- **コマ送りマップ**: 全地点の時別観測値(気温・降水・風速・湿度・気圧・日照)を 1 時間ごとに再生。
+  夜明けとともに気温が上がる波や、雨雲の帯が動く様子が見える
+- **風の地図と風配図**: 任意の時刻の風を矢印(向き・強さ)で全国に描く。1 地点の 16 方位 × 風速階級の風配図
+- **気温の断面図**: 緯度帯 × 時刻のヒートマップ、標高 × 気温の散布図から推定する気温減率(℃/km)とその時間変化、
+  府県内の全地点 × 時刻のヒートマップ
 
 データ取得から集計、品質チェック、公開までを GitHub Actions で毎日自動実行します。
 外部サービスの契約や API キーは不要です。
@@ -22,7 +24,7 @@ data/raw/amedas/*.jsonl.gz(生データ。git で履歴を保持)
 data/amedas.duckdb(marts スキーマ)
       │
       ▼
-app/streamlit_app.py(ダッシュボード)
+app/streamlit_app.py(ダッシュボード。ページは app/views/ に 1 ファイルずつ)
 ```
 
 | 層 | 役割 |
@@ -30,7 +32,7 @@ app/streamlit_app.py(ダッシュボード)
 | 取得 | 気象庁サイトの JSON を時刻ごとに保存。取得済みの時刻はスキップ |
 | 変換 | dbt が DuckDB 上で staging(整形)→ marts(集計)を構築 |
 | 検証 | 主キーの一意性、値域、参照整合性など 34 件の自動テスト |
-| 可視化 | Streamlit が marts を読み取って表示 |
+| 可視化 | Streamlit + Plotly が marts を読み取って表示 |
 
 ## データソース
 
@@ -83,11 +85,22 @@ streamlit run app/streamlit_app.py
 
 1. 直近 2 日分の観測値を取得し、生データの差分を git にコミット
 2. `dbt build` で集計と品質テストを実行
-3. DuckDB ファイルを Artifact として 7 日間保存
+3. DuckDB ファイルを Artifact として 7 日間保存し、Release `data-latest` にも上書き公開
 4. データカタログ(dbt docs)を GitHub Pages に公開
 
 利用にはリポジトリ設定で Pages の Source を **GitHub Actions** に、Workflow permissions を
 **Read and write** にしてください。Pages を使わない場合は `deploy-docs` ジョブを削除します。
+
+## Web 公開(Streamlit Community Cloud)
+
+[share.streamlit.io](https://share.streamlit.io) でこのリポジトリと `app/streamlit_app.py` を指定するとそのまま公開できます。
+
+公開環境には `dbt build` で作る DuckDB が無いので、アプリは起動時に Release `data-latest` の
+`amedas.duckdb` をダウンロードして使います(6 時間経つと取り直し)。Release は上記ワークフローが毎日更新します。
+ローカルに `dbt build` で作った DuckDB がある場合はそちらを優先し、ダウンロードはしません。
+
+リポジトリが非公開の場合は、Streamlit の Secrets に `GITHUB_TOKEN`(repo 読み取り権限)を設定してください。
+別リポジトリやタグから取得する場合は `AMEDAS_GITHUB_REPO`、`AMEDAS_RELEASE_TAG` で上書きできます。
 
 ## ディレクトリ構成
 
@@ -98,6 +111,7 @@ seeds/            府県コードと地方名の対応表
 tests/            個別の整合性テスト
 macros/           スキーマ命名の調整
 scripts/          データ取得、DuckDB への問い合わせ補助
+app/              ダッシュボード(streamlit_app.py がページを登録、views/ に各ページ、common.py に共通処理)
 app/              Streamlit ダッシュボード
 docs/             設計メモ
 ```

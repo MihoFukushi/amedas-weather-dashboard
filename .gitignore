@@ -6,6 +6,8 @@ logs/
 # DuckDB (dbt build で再生成できるのでコミットしない)
 data/*.duckdb
 data/*.duckdb.wal
+data/*.duckdb.stamp
+data/*.duckdb.part
 
 # 一時ファイル
 data/raw/**/*.tmp

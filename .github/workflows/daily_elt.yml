@@ -61,6 +61,18 @@ jobs:
           path: data/amedas.duckdb
           retention-days: 7
 
+      # 集計済み DuckDB を固定タグ(data-latest)の Release に上書きする。
+      # 公開中のダッシュボード(Streamlit Community Cloud)は起動時にここから取得する
+      - name: Publish DuckDB to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view data-latest >/dev/null 2>&1; then
+            gh release create data-latest --title "Latest DuckDB" --latest=false \
+              --notes "daily_elt が毎日上書きする集計済み DuckDB(marts スキーマ)。ダッシュボードが起動時に取得する。"
+          fi
+          gh release upload data-latest data/amedas.duckdb --clobber
+
       - name: Upload dbt docs for Pages
         uses: actions/upload-pages-artifact@v3
         with:
